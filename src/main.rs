@@ -1,7 +1,4 @@
-use age::{
-    secrecy::{ExposeSecret, SecretString},
-    x25519::{Identity, Recipient},
-};
+use age::x25519::Identity;
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
@@ -48,6 +45,13 @@ struct PasswordManager {
 }
 
 impl PasswordManager {
+    fn get_all_sites(&self) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        let mut stmt = self.db_conn.prepare("SELECT DISTINCT site FROM passwords")?;
+        let sites = stmt.query_map([], |row| row.get(0))?
+            .collect::<Result<Vec<String>, _>>()?;
+        Ok(sites)
+    }
+
     fn new(master_password: &str, db_path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         if master_password.len() < MIN_PASSWORD_LENGTH {
             return Err("Le mot de passe maître doit faire au moins 12 caractères".into());
@@ -417,7 +421,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_confirmation("Confirmez le mot de passe maître", "Les mots de passe ne correspondent pas")
         .interact()?;
 
-    let mut pm = PasswordManager::new(&master_password, "passwords.db")?;
+    let pm = PasswordManager::new(&master_password, "passwords.db")?;
 
     // Nettoyage périodique des anciennes données
     pm.cleanup_old_data()?;
@@ -430,7 +434,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("2. Récupérer un mot de passe");
         println!("3. Générer un mot de passe");
         println!("4. Exporter une sauvegarde chiffrée");
-        println!("5. Quitter");
+        println!("5. Voir tous les sites enregistrés");
+        println!("6. Quitter");
 
         let choice: String = Input::new()
             .with_prompt("Choix")
@@ -533,6 +538,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             "5" => {
+                match pm.get_all_sites() {
+                    Ok(sites) => {
+                        println!("\n🔐 Sites enregistrés:");
+                        for site in sites {
+                            println!("📋 {}", site);
+                        }
+                    },
+                    Err(e) => println!("❌ Erreur: {}", e),
+                }
+            }
+
+            "6" => {
                 println!("\n👋 Au revoir!");
                 break;
             }
